@@ -7,6 +7,7 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from sensor_msgs.msg import JointState
 from pathlib import Path
+from ur3e_interfaces.msg import EstadoRobot
 
 
 class SuscriptorArticulaciones(Node):
@@ -16,7 +17,7 @@ class SuscriptorArticulaciones(Node):
         """Constructor de la clase SuscriptorArticulaciones."""
         super().__init__("suscriptor_articulaciones")
         self.create_subscription(JointState, "/joint_states", self._callback, 10)
-        self.articulaciones: dict[str, dict[str, float]] = {}
+        self.articulaciones: dict[str, EstadoRobot] = {}
         self.historial: list[dict] = []
         self.muestras_anteriores: dict[str, tuple[float, float]] = {}
         self.trayectoria_actual: str = "sin_trayectoria"
@@ -36,13 +37,14 @@ class SuscriptorArticulaciones(Node):
         )
 
         for i, nombre in enumerate(mensaje.name):
-            datos = {}
-            datos["posicion"] = mensaje.position[i]
-            datos["velocidad"] = mensaje.velocity[i]
-            datos["esfuerzo"] = mensaje.effort[i]
-            self.articulaciones[nombre] = datos
+            estado = EstadoRobot()
+            estado.header = mensaje.header
+            estado.nombre = nombre
+            estado.posicion = mensaje.position[i]
+            estado.velocidad = mensaje.velocity[i]
+            self.articulaciones[nombre] = estado
             aceleracion = None
-            velocidad_actual = datos["velocidad"]
+            velocidad_actual = estado.velocidad
 
             if nombre in self.muestras_anteriores:
                 tiempo_anterior, velocidad_anterior = (
@@ -54,6 +56,7 @@ class SuscriptorArticulaciones(Node):
                     aceleracion = (
                         velocidad_actual - velocidad_anterior
                     ) / diferencia_tiempo
+                    estado.aceleracion = aceleracion
 
             self.muestras_anteriores[nombre] = (
                 tiempo,
@@ -62,8 +65,8 @@ class SuscriptorArticulaciones(Node):
             self.historial.append({
                 "tiempo": tiempo,
                 "articulacion": nombre,
-                "posicion": datos["posicion"],
-                "velocidad": datos["velocidad"],
+                "posicion": estado.posicion,
+                "velocidad": estado.velocidad,
                 "aceleracion": aceleracion,
                 "trayectoria": self.trayectoria_actual,
             })
@@ -89,11 +92,11 @@ class SuscriptorArticulaciones(Node):
             escritor.writeheader()
             escritor.writerows(muestras)
 
-    def obtener_datos(self) -> dict[str, dict[str, float]]:
+    def obtener_datos(self) -> dict[str, EstadoRobot]:
         """Obtiene los datos de las articulaciones del robot.
         
         Returns:
-            dict[str, dict[str, float]]: Diccionario con los datos de las articulaciones del robot.
+            dict[str, EstadoRobot]: Diccionario con los datos de las articulaciones del robot.
         """
         return self.articulaciones
 
