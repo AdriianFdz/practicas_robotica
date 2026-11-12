@@ -21,6 +21,7 @@ class SuscriptorArticulaciones(Node):
         self.historial: list[dict] = []
         self.muestras_anteriores: dict[str, tuple[float, float]] = {}
         self.trayectoria_actual: str = "sin_trayectoria"
+        self.umbral_velocidad: float = 1e-3
 
     def _callback(self, mensaje: JointState) -> None:
         """Guarda los datos recibidos de cada articulación.
@@ -35,6 +36,11 @@ class SuscriptorArticulaciones(Node):
             mensaje.header.stamp.sec
             + mensaje.header.stamp.nanosec / 1_000_000_000
         )
+
+        en_movimiento = False
+        for velocidad in mensaje.velocity:
+            if abs(velocidad) > self.umbral_velocidad:
+                en_movimiento = True
 
         for i, nombre in enumerate(mensaje.name):
             estado = EstadoRobot()
@@ -62,14 +68,15 @@ class SuscriptorArticulaciones(Node):
                 tiempo,
                 velocidad_actual,
             )
-            self.historial.append({
-                "tiempo": tiempo,
-                "articulacion": nombre,
-                "posicion": estado.posicion,
-                "velocidad": estado.velocidad,
-                "aceleracion": aceleracion,
-                "trayectoria": self.trayectoria_actual,
-            })
+            if en_movimiento:
+                self.historial.append({
+                    "tiempo": tiempo,
+                    "articulacion": nombre,
+                    "posicion": estado.posicion,
+                    "velocidad": estado.velocidad,
+                    "aceleracion": aceleracion,
+                    "trayectoria": self.trayectoria_actual,
+                })
 
     def guardar_csv(self, ruta: str) -> None:
         """Guarda el historial en un CSV con una fila por muestra."""
