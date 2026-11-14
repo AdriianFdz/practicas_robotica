@@ -1,67 +1,66 @@
-import rclpy
-from math import pi, sin, cos
-from typing import List
-import time
+from math import cos, pi, sin
 import threading
+import time
+from typing import List
 
-from rclpy.action import ActionClient
-from rclpy.executors import MultiThreadedExecutor
-from rclpy.node import Node
-from rclpy.time import Time
-from rclpy.duration import Duration
-
-from moveit_msgs.action import MoveGroup, ExecuteTrajectory
+from geometry_msgs.msg import Pose
+from moveit_msgs.action import ExecuteTrajectory, MoveGroup
 from moveit_msgs.msg import (
     Constraints,
     JointConstraint,
     MoveItErrorCodes,
-    RobotState
 )
 from moveit_msgs.srv import GetCartesianPath
-
-from sensor_msgs.msg import JointState
-
-from geometry_msgs.msg import Pose
-
+import rclpy
+from rclpy.action import ActionClient
+from rclpy.duration import Duration
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.node import Node
+from rclpy.task import Future
+from rclpy.time import Time
 from tf2_ros import Buffer, TransformListener
 
 from suscriptor_articulaciones import SuscriptorArticulaciones
 
 FACTOR_ESCALA = 0.1
-ARTICULACIONES = ["shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint",
-                  "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"]
+ARTICULACIONES = ['shoulder_pan_joint', 'shoulder_lift_joint', 'elbow_joint',
+                  'wrist_1_joint', 'wrist_2_joint', 'wrist_3_joint']
+
+
 class ControlRobot(Node):
-    """Clase que permite controlar el robot."""
+    """Nodo que planifica y ejecuta trayectorias del robot con MoveIt."""
+
     def __init__(self, suscriptor_articulaciones: SuscriptorArticulaciones):
-        """Constructor de la clase ControlRobot.
-        
+        """Inicializa el nodo de control y sus clientes de MoveIt.
+
         Args:
-            suscriptor_articulaciones (SuscriptorArticulaciones): Instancia del suscriptor de articulaciones.
+            suscriptor_articulaciones (SuscriptorArticulaciones): Instancia del
+            suscriptor de articulaciones.
         """
-        super().__init__("control_robot")
+        super().__init__('control_robot')
         self.suscriptor_articulaciones = suscriptor_articulaciones
 
         self.articulaciones = ARTICULACIONES.copy()
-        self.group_name = "robot"
+        self.group_name = 'robot'
 
-        # Cliente de acción para mover el robot a una posición de articulaciones       
+        # Cliente de acción para mover el robot a una posición de articulaciones
         self.cliente_move_group = ActionClient(
             self,
             MoveGroup,
-            "move_action",
+            'move_action',
         )
 
         # Cliente de servicio para calcular la trayectoria cartesiana
         self.cliente_calculo_trayectoria = self.create_client(
             GetCartesianPath,
-            "/compute_cartesian_path",
+            '/compute_cartesian_path',
         )
 
         # Cliente de acción para ejecutar la trayectoria calculada
         self.cliente_ejecucion_trayectoria = ActionClient(
             self,
             ExecuteTrajectory,
-            "/execute_trajectory",
+            '/execute_trajectory',
         )
 
         self.tf_buffer = Buffer()
@@ -71,9 +70,8 @@ class ControlRobot(Node):
             self,
         )
 
-        
     @staticmethod
-    def __esperar(future: rclpy.task.Future) -> object:
+    def __esperar(future: Future) -> object:
         """Espera a que termine una operación asíncrona de ROS."""
         while not future.done():
             time.sleep(0.01)
@@ -113,8 +111,8 @@ class ControlRobot(Node):
     def pose_actual(self) -> Pose:
         """Devuelve la pose actual del extremo del robot en el marco world."""
         transformacion = self.tf_buffer.lookup_transform(
-            "world",
-            "wrist_3_link",
+            'world',
+            'wrist_3_link',
             Time(),
             timeout=Duration(seconds=2.0),
         )
@@ -158,10 +156,10 @@ class ControlRobot(Node):
     def mover_circular(self, radio: float = 0.02) -> bool:
         """Calcula y ejecuta una trayectoria circular."""
         solicitud = GetCartesianPath.Request()
-        solicitud.header.frame_id = "world"
+        solicitud.header.frame_id = 'world'
         solicitud.start_state.is_diff = True
         solicitud.group_name = self.group_name
-        solicitud.link_name = "wrist_3_link"
+        solicitud.link_name = 'wrist_3_link'
         solicitud.max_step = 0.005
         solicitud.avoid_collisions = True
         solicitud.waypoints = self.generar_circulo(radio)
@@ -176,7 +174,7 @@ class ControlRobot(Node):
             or respuesta.fraction < 0.999
         ):
             self.get_logger().error(
-                f"No se pudo completar el círculo: {respuesta.fraction:.1%}"
+                f'No se pudo completar el círculo: {respuesta.fraction:.1%}'
             )
             return False
 
@@ -189,12 +187,12 @@ class ControlRobot(Node):
         )
 
         if not manejador.accepted:
-            self.get_logger().error("MoveIt ha rechazado el círculo.")
+            self.get_logger().error('MoveIt ha rechazado el círculo.')
             return False
 
         resultado = self.__esperar(manejador.get_result_async()).result
         return resultado.error_code.val == MoveItErrorCodes.SUCCESS
-    
+
     def mover_lineal(self, desplazamiento_x: float) -> bool:
         """Mueve linealmente el extremo del robot en el eje X."""
         pose_inicial = self.pose_actual()
@@ -206,9 +204,9 @@ class ControlRobot(Node):
         pose_final.orientation = pose_inicial.orientation
 
         solicitud = GetCartesianPath.Request()
-        solicitud.header.frame_id = "world"
+        solicitud.header.frame_id = 'world'
         solicitud.group_name = self.group_name
-        solicitud.link_name = "wrist_3_link"
+        solicitud.link_name = 'wrist_3_link'
         solicitud.max_step = 0.01
         solicitud.jump_threshold = 0.0
         solicitud.avoid_collisions = True
@@ -219,16 +217,16 @@ class ControlRobot(Node):
         respuesta = self.__esperar(futuro)
 
         if respuesta.error_code.val != MoveItErrorCodes.SUCCESS:
-            self.get_logger().error("No se pudo calcular la trayectoria lineal.")
+            self.get_logger().error('No se pudo calcular la trayectoria lineal.')
             return False
 
         if respuesta.fraction < 0.99:
             self.get_logger().error(
-                f"Trayectoria incompleta: {respuesta.fraction:.1%}"
+                f'Trayectoria incompleta: {respuesta.fraction:.1%}'
             )
             return False
 
-        self.get_logger().info("Trayectoria lineal calculada correctamente.")
+        self.get_logger().info('Trayectoria lineal calculada correctamente.')
 
         objetivo = ExecuteTrajectory.Goal()
         objetivo.trajectory = respuesta.solution
@@ -238,7 +236,7 @@ class ControlRobot(Node):
         )
 
         if not objetivo_ejecucion.accepted:
-            self.get_logger().error("MoveIt ha rechazado la trayectoria.")
+            self.get_logger().error('MoveIt ha rechazado la trayectoria.')
             return False
 
         resultado_ejecucion = self.__esperar(
@@ -246,11 +244,12 @@ class ControlRobot(Node):
         )
 
         if resultado_ejecucion.result.error_code.val != MoveItErrorCodes.SUCCESS:
-            self.get_logger().error("La ejecución de la trayectoria ha fallado.")
+            self.get_logger().error('La ejecución de la trayectoria ha fallado.')
             return False
 
-        self.get_logger().info("Trayectoria lineal ejecutada correctamente.")
+        self.get_logger().info('Trayectoria lineal ejecutada correctamente.')
         return True
+
 
 def main() -> None:
     """Función principal del nodo ControlRobot."""
@@ -266,12 +265,12 @@ def main() -> None:
     hilo.start()
 
     try:
-        control.get_logger().info("Esperando a que se reciban datos de las articulaciones...")
+        control.get_logger().info('Esperando a que se reciban datos de las articulaciones...')
         control.cliente_move_group.wait_for_server()
-        control.get_logger().info("Conexión con el servidor de MoveIt establecida.")
+        control.get_logger().info('Conexión con el servidor de MoveIt establecida.')
 
-        suscriptor.trayectoria_actual = "joint"
-        
+        suscriptor.trayectoria_actual = 'joint'
+
         # Movimiento Joint
         resultado_joint = control.mover_articulaciones([
             0.5,
@@ -281,32 +280,32 @@ def main() -> None:
             pi / 2,
             0.0
         ])
-        print(f"Resultado del movimiento a articulaciones: {resultado_joint}")
+        print(f'Resultado del movimiento a articulaciones: {resultado_joint}')
 
-        suscriptor.trayectoria_actual = "lineal"
+        suscriptor.trayectoria_actual = 'lineal'
 
         # Movimiento lineal
         resultado_lineal = control.mover_lineal(0.1)
 
-        print(f"Resultado del movimiento lineal: {resultado_lineal}")
+        print(f'Resultado del movimiento lineal: {resultado_lineal}')
 
-        suscriptor.trayectoria_actual = "circular"
+        suscriptor.trayectoria_actual = 'circular'
 
         # Movimiento circular de 2 cm de radio
         resultado_circular = control.mover_circular(0.02)
-        print(f"Resultado del movimiento circular: {resultado_circular}")
+        print(f'Resultado del movimiento circular: {resultado_circular}')
 
-        suscriptor.trayectoria_actual = "sin_trayectoria"
+        suscriptor.trayectoria_actual = 'sin_trayectoria'
 
         time.sleep(1)
         print(suscriptor.obtener_datos())
 
-        print(f"Muestras guardadas: {len(suscriptor.historial)}")
-        print("Primeras dos muestras con aceleración calculada:")
+        print(f'Muestras guardadas: {len(suscriptor.historial)}')
+        print('Primeras dos muestras con aceleración calculada:')
         mostradas = 0
 
         for muestra in suscriptor.historial:
-            if muestra["aceleracion"] is not None:
+            if muestra['aceleracion'] is not None:
                 print(muestra)
                 mostradas += 1
 
@@ -314,24 +313,24 @@ def main() -> None:
                     break
 
         velocidad_maxima = max(
-            (abs(m["velocidad"]) for m in suscriptor.historial),
+            (abs(m['velocidad']) for m in suscriptor.historial),
             default=0.0,
         )
-        print(f"Máxima velocidad registrada: {velocidad_maxima} rad/s")
+        print(f'Máxima velocidad registrada: {velocidad_maxima} rad/s')
 
-        for trayectoria in ("joint", "lineal", "circular"):
+        for trayectoria in ('joint', 'lineal', 'circular'):
             cantidad = sum(
                 1 for muestra in suscriptor.historial
-                if muestra["trayectoria"] == trayectoria
+                if muestra['trayectoria'] == trayectoria
             )
-            print(f"Muestras de {trayectoria}: {cantidad}")
+            print(f'Muestras de {trayectoria}: {cantidad}')
 
-        ruta_csv = "/home/laboratorio/ros_workspace/resultados/practica1.csv"
+        ruta_csv = '/home/laboratorio/ros_workspace/resultados/practica1.csv'
         suscriptor.guardar_csv(ruta_csv)
-        print(f"Datos guardados en: {ruta_csv}")
+        print(f'Datos guardados en: {ruta_csv}')
 
     except KeyboardInterrupt:
-        control.get_logger().info("Nodo ControlRobot detenido por el usuario.")
+        control.get_logger().info('Nodo ControlRobot detenido por el usuario.')
     finally:
         ejecutor.shutdown()
         suscriptor.destroy_node()
@@ -339,5 +338,5 @@ def main() -> None:
         rclpy.try_shutdown()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

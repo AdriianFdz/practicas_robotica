@@ -1,36 +1,39 @@
 #!/usr/bin/python3
 
 import csv
-import rclpy
-
-from rclpy.node import Node
-from std_msgs.msg import String
-from sensor_msgs.msg import JointState
 from pathlib import Path
+
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import JointState
 from ur3e_interfaces.msg import EstadoRobot
 
 
 class SuscriptorArticulaciones(Node):
-    """Realiza la suscripción al topic /joint_states y muestra por pantalla el nombre de la articulación, posición,
-    velocidad y esfuerzo de cada articulación del robot."""
+    """Nodo que se suscribe a /joint_states y procesa el estado de las articulaciones.
+
+    Calcula la aceleración de cada articulación, guarda las muestras mientras el
+    robot se mueve y las publica con el mensaje personalizado EstadoRobot.
+    """
+
     def __init__(self):
-        """Constructor de la clase SuscriptorArticulaciones."""
-        super().__init__("suscriptor_articulaciones")
-        self.create_subscription(JointState, "/joint_states", self._callback, 10)
+        """Inicializa el nodo, la suscripción y el publicador."""
+        super().__init__('suscriptor_articulaciones')
+        self.create_subscription(JointState, '/joint_states', self._callback, 10)
         self.articulaciones: dict[str, EstadoRobot] = {}
         self.historial: list[dict] = []
         self.muestras_anteriores: dict[str, tuple[float, float]] = {}
-        self.trayectoria_actual: str = "sin_trayectoria"
-        self.publicador_estado = self.create_publisher(EstadoRobot, "/estado_articulaciones", 10)
+        self.trayectoria_actual: str = 'sin_trayectoria'
+        self.publicador_estado = self.create_publisher(EstadoRobot, '/estado_articulaciones', 10)
         self.umbral_velocidad: float = 1e-3
 
     def _callback(self, mensaje: JointState) -> None:
         """Guarda los datos recibidos de cada articulación.
-        
+
         Args:
             mensaje (JointState): Mensaje recibido del topic /joint_states.
         """
-        if "finger_joint" in mensaje.name:
+        if 'finger_joint' in mensaje.name:
             return
 
         tiempo = (
@@ -72,12 +75,12 @@ class SuscriptorArticulaciones(Node):
             if en_movimiento:
                 self.publicador_estado.publish(estado)
                 self.historial.append({
-                    "tiempo": tiempo,
-                    "articulacion": nombre,
-                    "posicion": estado.posicion,
-                    "velocidad": estado.velocidad,
-                    "aceleracion": aceleracion,
-                    "trayectoria": self.trayectoria_actual,
+                    'tiempo': tiempo,
+                    'articulacion': nombre,
+                    'posicion': estado.posicion,
+                    'velocidad': estado.velocidad,
+                    'aceleracion': aceleracion,
+                    'trayectoria': self.trayectoria_actual,
                 })
 
     def guardar_csv(self, ruta: str) -> None:
@@ -86,28 +89,29 @@ class SuscriptorArticulaciones(Node):
         archivo.parent.mkdir(parents=True, exist_ok=True)
 
         campos = [
-            "trayectoria",
-            "tiempo",
-            "articulacion",
-            "posicion",
-            "velocidad",
-            "aceleracion",
+            'trayectoria',
+            'tiempo',
+            'articulacion',
+            'posicion',
+            'velocidad',
+            'aceleracion',
         ]
 
         muestras = self.historial.copy()
 
-        with archivo.open("w", newline="", encoding="utf-8") as fichero:
+        with archivo.open('w', newline='', encoding='utf-8') as fichero:
             escritor = csv.DictWriter(fichero, fieldnames=campos)
             escritor.writeheader()
             escritor.writerows(muestras)
 
     def obtener_datos(self) -> dict[str, EstadoRobot]:
         """Obtiene los datos de las articulaciones del robot.
-        
+
         Returns:
             dict[str, EstadoRobot]: Diccionario con los datos de las articulaciones del robot.
         """
         return self.articulaciones
+
 
 def main() -> None:
     """Función principal del nodo SuscriptorArticulaciones."""
@@ -118,6 +122,8 @@ def main() -> None:
     except KeyboardInterrupt:
         pass
     nodo.destroy_node()
-    rclpy.try_shutdown()   
+    rclpy.try_shutdown()
+
+
 if __name__ == '__main__':
     main()
