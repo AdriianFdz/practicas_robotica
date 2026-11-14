@@ -19,15 +19,15 @@ class SuscriptorArticulaciones(Node):
     def __init__(self):
         """Inicializa el nodo, la suscripción y el publicador."""
         super().__init__('suscriptor_articulaciones')
-        self.create_subscription(JointState, '/joint_states', self._callback, 10)
-        self.articulaciones: dict[str, EstadoRobot] = {}
+        self.create_subscription(JointState, '/joint_states', self._procesar_estado, 10)
+        self.estados_actuales: dict[str, EstadoRobot] = {}
         self.historial: list[dict] = []
         self.muestras_anteriores: dict[str, tuple[float, float]] = {}
         self.trayectoria_actual: str = 'sin_trayectoria'
         self.publicador_estado = self.create_publisher(EstadoRobot, '/estado_articulaciones', 10)
         self.umbral_velocidad: float = 1e-3
 
-    def _callback(self, mensaje: JointState) -> None:
+    def _procesar_estado(self, mensaje: JointState) -> None:
         """Guarda los datos recibidos de cada articulación.
 
         Args:
@@ -52,7 +52,7 @@ class SuscriptorArticulaciones(Node):
             estado.nombre = nombre
             estado.posicion = mensaje.position[i]
             estado.velocidad = mensaje.velocity[i]
-            self.articulaciones[nombre] = estado
+            self.estados_actuales[nombre] = estado
             aceleracion = None
             velocidad_actual = estado.velocidad
 
@@ -110,7 +110,7 @@ class SuscriptorArticulaciones(Node):
         Returns:
             dict[str, EstadoRobot]: Diccionario con los datos de las articulaciones del robot.
         """
-        return self.articulaciones
+        return self.estados_actuales
 
 
 def main() -> None:
